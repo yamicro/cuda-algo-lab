@@ -1,0 +1,46 @@
+# 编译 & 构建相关
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# CUDA 编译结果
+*.so
+*.a
+*.o
+*.obj
+
+# pip install -e . 生成的egg-info
+*.egg-info/
+
+# IDE相关
+.vscode/
+.idea/
+
+# 日志/调试文件
+*.log
+*.out
+*.err
+
+# 临时数据
+*.npy
+*.npz
+
+# pybind11 下载/构建残留
+third_party/pybind11/.mypy_cache/
+third_party/pybind11/.pytest_cache/
+third_party/pybind11/build/
+third_party/pybind11/.hypothesis/
+
+# OS系统垃圾
+.DS_Store
+Thumbs.db
