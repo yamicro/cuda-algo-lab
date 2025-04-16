@@ -3,7 +3,8 @@
 #include <cuda_runtime.h>
 #include "cuda/add.cu"
 #include "cuda/histgram.cu"
-#include "cuda/sigmod.cu""
+#include "cuda/sigmod.cu"
+#include "cuda/relu.cu"
 
 void add_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11::array_t<float> c) {
     auto buf_a = a.unchecked<1>();
@@ -65,9 +66,28 @@ void sigmoid_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     cudaFree(d_y);
 }
 
+void relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
+    auto buf_x = x.unchecked<1>();
+    auto buf_y = y.mutable_unchecked<1>();
+    int N = buf_x.size();
+
+    float *d_x, *d_y;
+    cudaMalloc(&d_x, N * sizeof(float));
+    cudaMalloc(&d_y, N * sizeof(float));
+
+    cudaMemcpy(d_x, buf_x.data(0), N * sizeof(float), cudaMemcpyHostToDevice);
+
+    relu_kernel<<<(N+255)/256, 256>>>(d_x, d_y, N);
+
+    cudaMemcpy(buf_y.mutable_data(0), d_y, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+}
+
 PYBIND11_MODULE(binding, m) {
     m.def("add_cuda", &add_cuda, "CUDA add two arrays");
     m.def("histogram_cuda", &histogram_cuda, "CUDA histogram");
     m.def("sigmoid_cuda", &sigmoid_cuda, "CUDA sigmoid");
-
+    m.def("relu_cuda", &relu_cuda, "CUDA relu");
 }

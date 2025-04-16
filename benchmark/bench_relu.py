@@ -3,8 +3,8 @@ import sys
 import time
 sys.path.append("./build")
 
-from binding import sigmoid_cuda
-from python.sigmod import sigmoid_py
+from binding import relu_cuda
+from python.relu import relu_py
 
 def benchmark(func, *args):
     time.sleep(1)
@@ -15,7 +15,7 @@ def benchmark(func, *args):
 
 N = 1 << 20
 x = np.random.rand(N).astype(np.float32)
-y = np.zeros(N, dtype=np.float32)
+y = np.zeros(N, np.float32)
 
-print(f"CUDA time: {benchmark(sigmoid_cuda, x, y):.4f} ms")
-print(f"Python time: {benchmark(sigmoid_py,  x):.4f} ms")
+print(f"CUDA time: {benchmark(relu_cuda, x, y):.4f} ms")
+print(f"Python time: {benchmark(relu_py,  x):.4f} ms")
