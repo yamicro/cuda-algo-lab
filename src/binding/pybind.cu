@@ -1,12 +1,17 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <cuda_runtime.h>
+#include "bench_cuda/benchmark_cuda.h"
 #include "cuda/add.cu"
 #include "cuda/histgram.cu"
 #include "cuda/sigmod.cu"
 #include "cuda/relu.cu"
+#include <iostream>
 
-void add_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11::array_t<float> c) {
+
+
+
+float add_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11::array_t<float> c) {
     auto buf_a = a.unchecked<1>();
     auto buf_b = b.unchecked<1>();
     auto buf_c = c.mutable_unchecked<1>();
@@ -19,15 +24,19 @@ void add_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11::
     cudaMemcpy(d_a, buf_a.data(0), n * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, buf_b.data(0), n * sizeof(float), cudaMemcpyHostToDevice);
 
-    add_kernel<<<(n+255)/256, 256>>>(d_a, d_b, d_c, n);
+    float elapsed = benchmark_kernel([&]() {
+        add_kernel<<<(n+255)/256, 256>>>(d_a, d_b, d_c, n);
+    }, 3, 10);
+
 
     cudaMemcpy(buf_c.mutable_data(0), d_c, n * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
+    return elapsed;
 }
 
 
-void histogram_cuda(pybind11::array_t<int> a, pybind11::array_t<int> y) {
+float histogram_cuda(pybind11::array_t<int> a, pybind11::array_t<int> y) {
     auto buf_a = a.unchecked<1>();
     auto buf_y = y.mutable_unchecked<1>();
     int N = buf_a.size();
@@ -38,16 +47,20 @@ void histogram_cuda(pybind11::array_t<int> a, pybind11::array_t<int> y) {
 
     cudaMemcpy(d_a, buf_a.data(0), N * sizeof(int), cudaMemcpyHostToDevice);
 //    cudaMemcpy(d_y, buf_y.data(0), buf_y.size(0) * sizeof(int), cudaMemcpyHostToDevice);
+    float elapsed = benchmark_kernel([&]() {
+        histogram_kernel<<<(N+255)/256, 256>>>(d_a, d_y, N);
+    }, 3, 10);
 
-    histogram_kernel<<<(N+255)/256, 256>>>(d_a, d_y, N);
 
     cudaMemcpy(buf_y.mutable_data(0), d_y, buf_y.size() * sizeof(int), cudaMemcpyDeviceToHost);
 
     cudaFree(d_a);
     cudaFree(d_y);
+
+    return elapsed;
 }
 
-void sigmoid_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
+float sigmoid_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     auto buf_x = x.unchecked<1>();
     auto buf_y = y.mutable_unchecked<1>();
     int N = buf_x.size();
@@ -58,15 +71,19 @@ void sigmoid_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
 
     cudaMemcpy(d_x, buf_x.data(0), N * sizeof(float), cudaMemcpyHostToDevice);
 
-    sigmoid_kernel<<<(N+255)/256, 256>>>(d_x, d_y, N);
+    float elapsed = benchmark_kernel([&]() {
+        sigmoid_kernel<<<(N+255)/256, 256>>>(d_x, d_y, N);
+    }, 3, 10);
 
     cudaMemcpy(buf_y.mutable_data(0), d_y, N * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_x);
     cudaFree(d_y);
+
+    return elapsed;
 }
 
-void relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
+float relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     auto buf_x = x.unchecked<1>();
     auto buf_y = y.mutable_unchecked<1>();
     int N = buf_x.size();
@@ -77,12 +94,17 @@ void relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
 
     cudaMemcpy(d_x, buf_x.data(0), N * sizeof(float), cudaMemcpyHostToDevice);
 
-    relu_kernel<<<(N+255)/256, 256>>>(d_x, d_y, N);
+    // benchmark 包裹 kernel 启动
+    float elapsed = benchmark_kernel([&]() {
+        relu_kernel<<<(N+255)/256, 256>>>(d_x, d_y, N);
+    },3, 10);
 
     cudaMemcpy(buf_y.mutable_data(0), d_y, N * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_x);
     cudaFree(d_y);
+
+    return elapsed;
 }
 
 PYBIND11_MODULE(binding, m) {

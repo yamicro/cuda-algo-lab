@@ -31,10 +31,13 @@ link_directories(${PYTHON_LIBRARY})
 add_subdirectory(third_party/pybind11)
 
 include_directories(${PROJECT_SOURCE_DIR}/src)
+include_directories(${PROJECT_SOURCE_DIR}/src/bench_cuda)
+
 
 file(GLOB_RECURSE CUDA_SRC ${PROJECT_SOURCE_DIR}/src/cuda/*.cu)
 file(GLOB_RECURSE CPU_SRC ${PROJECT_SOURCE_DIR}/src/cpu/*.cpp)
 file(GLOB_RECURSE BIND_SRC ${PROJECT_SOURCE_DIR}/src/binding/*.cu)
+
 
 add_library(cuda_kernels STATIC ${CUDA_SRC})
 add_library(cpu_kernels STATIC ${CPU_SRC})

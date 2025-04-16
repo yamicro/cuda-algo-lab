@@ -17,5 +17,5 @@ N = 1 << 20
 x = np.random.rand(N).astype(np.float32)
 y = np.zeros(N, np.float32)
 
-print(f"CUDA time: {benchmark(relu_cuda, x, y):.4f} ms")
+print(f"CUDA time: {relu_cuda(x, y):.4f} ms")
 print(f"Python time: {benchmark(relu_py,  x):.4f} ms")
