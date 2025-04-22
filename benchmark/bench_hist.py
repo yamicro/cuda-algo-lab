@@ -20,5 +20,5 @@ max_value = 100
 x = np.random.randint(0, max_value, size=N, dtype=np.int32)
 y = np.zeros(max_value, dtype=np.int32)
 
-print(f"CUDA time: {benchmark(histogram_cuda, x, y):.4f} ms")
+print(f"CUDA time: {histogram_cuda(x, y):.4f} ms")
 print(f"Python time: {benchmark(histogram_py, x, y):.4f} ms")

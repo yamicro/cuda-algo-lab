@@ -7,8 +7,8 @@ from binding import add_cuda
 from python.add import add_py
 
 
-def benchmark(func, type, *args):
-    if type is "python":
+def benchmark(func, arc_type, *args):
+    if arc_type is "python":
         time.sleep(1)
         start = time.time()
         func(*args)
@@ -29,5 +29,5 @@ x = np.random.rand(N).astype(np.float32)
 y = np.random.rand(N).astype(np.float32)
 z = np.zeros(N, dtype=np.float32)
 
-print(f"CUDA time: {benchmark(add_cuda,"cuda", x, y, z):.4f} ms")
+print(f"CUDA time: {add_cuda(x, y, z):.4f} ms")
 print(f"Python time: {benchmark(add_py, "python", x, y):.4f} ms")
