@@ -1,3 +1,4 @@
+#include <iostream>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <cuda_runtime.h>
@@ -8,7 +9,8 @@
 #include "cuda/relu.cu"
 #include "cuda/elu.cu"
 #include "cuda/gelu.cu"
-#include <iostream>
+#include "cuda/swish.cu"
+
 
 
 
@@ -153,6 +155,28 @@ float gelu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     return elapsed;
 }
 
+float swish_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
+    auto buf_x = x.unchecked<1>();
+    auto buf_y = y.mutable_unchecked<1>();
+    int N = buf_x.size();
+
+    float *d_x, *d_y;
+    cudaMalloc(&d_x, N * sizeof(float));
+    cudaMalloc(&d_y, N * sizeof(float));
+
+    cudaMemcpy(d_x, buf_x.data(0), N * sizeof(float), cudaMemcpyHostToDevice);
+
+    float elapsed = benchmark_kernel([&]() {
+    	swish_f32_kernel<<<(N + 255) / 256, 256>>>(d_x, d_y, N);
+    },3, 10);
+
+    cudaMemcpy(buf_y.mutable_data(0), d_y, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+    return elapsed;
+}
+
 PYBIND11_MODULE(binding, m) {
     m.def("add_cuda", &add_cuda, "CUDA add two arrays");
     m.def("histogram_cuda", &histogram_cuda, "CUDA histogram");
@@ -160,4 +184,5 @@ PYBIND11_MODULE(binding, m) {
     m.def("relu_cuda", &relu_cuda, "CUDA relu");
     m.def("elu_cuda", &elu_cuda, "CUDA ELU");
     m.def("gelu_cuda", &gelu_cuda, "CUDA GELU");
+    m.def("swish_cuda", &swish_cuda, "CUDA SWISH");
 }
