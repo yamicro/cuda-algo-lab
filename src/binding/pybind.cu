@@ -10,6 +10,8 @@
 #include "cuda/elu.cu"
 #include "cuda/gelu.cu"
 #include "cuda/swish.cu"
+#include "cuda/embedding.cu"
+#include "cuda/mat_transpose.cu"
 
 
 
@@ -177,6 +179,66 @@ float swish_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     return elapsed;
 }
 
+float embedding_cuda(pybind11::array_t<int> input,pybind11::array_t<float> weights, pybind11::array_t<float> output) {
+    auto buf_input = input.unchecked<1>();
+    auto buf_weights = weights.unchecked<2>();
+    auto buf_output_info = output.request();
+    float *h_output = static_cast<float *>(buf_output_info.ptr);
+
+    int N = buf_input.size();
+    int D = buf_weights.shape(1);
+
+    int *d_indices;
+    float *d_weights, *d_output;
+    cudaMalloc(&d_indices, N * sizeof(int));
+    cudaMalloc(&d_weights, buf_weights.shape(0) * D * sizeof(float));
+    cudaMalloc(&d_output, N * D * sizeof(float));
+
+    cudaMemcpy(d_indices, buf_input.data(0), N * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weights, buf_weights.data(0, 0), buf_weights.shape(0) * D * sizeof(float), cudaMemcpyHostToDevice);
+
+    float elapsed = benchmark_kernel([&]() {
+        embedding_f32_kernel<<<(N + 255) / 256, 256>>>(d_indices, d_weights, d_output, N, D);
+    }, 3, 10);
+
+    cudaMemcpy(h_output, d_output, N * D * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_indices);
+    cudaFree(d_weights);
+    cudaFree(d_output);
+
+    return elapsed;
+}
+
+float mat_transpose_cuda(pybind11::array_t<int> input, pybind11::array_t<float> output) {
+    auto buf_input = input.unchecked<2>();
+    auto buf_output = output.mutable_unchecked<2>();
+
+    int N = buf_input.shape(0);
+    int D = buf_input.shape(1);
+
+    float* d_input;
+    float* d_output;
+    cudaMalloc(&d_input, N * D * sizeof(float));
+    cudaMalloc(&d_output, N * D * sizeof(float));
+
+    cudaMemcpy(d_input, buf_input.data(0, 0), N * D * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_output, buf_input.data(0, 0), N * D * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    float elapsed = benchmark_kernel([&]() {
+        mat_transpose_f32_col2row_kernel<<<(N + 255) / 256, 256>>>(d_input, d_output, N, D);
+    }, 3, 10);
+
+    cudaMemcpy(buf_output.mutable_data(0,0), d_output, N * D * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    return elapsed;
+}
+
+
 PYBIND11_MODULE(binding, m) {
     m.def("add_cuda", &add_cuda, "CUDA add two arrays");
     m.def("histogram_cuda", &histogram_cuda, "CUDA histogram");
@@ -185,4 +247,6 @@ PYBIND11_MODULE(binding, m) {
     m.def("elu_cuda", &elu_cuda, "CUDA ELU");
     m.def("gelu_cuda", &gelu_cuda, "CUDA GELU");
     m.def("swish_cuda", &swish_cuda, "CUDA SWISH");
+    m.def("embedding_cuda", &embedding_cuda, "CUDA embedding");
+    m.def("mat_transpose_cuda", &mat_transpose_cuda, "CUDA mat_transpose transpose");
 }
