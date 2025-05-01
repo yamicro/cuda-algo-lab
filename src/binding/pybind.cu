@@ -12,6 +12,7 @@
 #include "cuda/swish.cu"
 #include "cuda/embedding.cu"
 #include "cuda/mat_transpose.cu"
+#include "cuda/warp_reduce_sum.cu"
 
 
 
@@ -239,6 +240,34 @@ float mat_transpose_cuda(pybind11::array_t<int> input, pybind11::array_t<float> 
 }
 
 
+float warp_reduce_sum_cuda(pybind11::array_t<float> input, pybind11::array_t<float> output) {
+    auto buf_in = input.unchecked<1>();
+    auto buf_out = output.mutable_unchecked<1>();
+
+    int N = buf_in.size();
+
+    float *d_x, *d_y;
+    cudaMalloc(&d_x, N * sizeof(float));
+    cudaMalloc(&d_y, (N / 32) * sizeof(float));
+
+    cudaMemcpy(d_x, buf_in.data(0), N * sizeof(float), cudaMemcpyHostToDevice);
+
+    int threads = 256;
+    int blocks = (N + threads - 1) / threads;
+
+    float elapsed = benchmark_kernel([&]() {
+    	block_all_reduce_sum_f32_f32_kernel<<<blocks, threads>>>(d_x, d_y, N);
+    }, 3, 10);
+
+
+    cudaMemcpy(buf_out.mutable_data(0), d_y, (N / 32) * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+    return elapsed;
+}
+
+
 PYBIND11_MODULE(binding, m) {
     m.def("add_cuda", &add_cuda, "CUDA add two arrays");
     m.def("histogram_cuda", &histogram_cuda, "CUDA histogram");
@@ -249,4 +278,5 @@ PYBIND11_MODULE(binding, m) {
     m.def("swish_cuda", &swish_cuda, "CUDA SWISH");
     m.def("embedding_cuda", &embedding_cuda, "CUDA embedding");
     m.def("mat_transpose_cuda", &mat_transpose_cuda, "CUDA mat_transpose transpose");
+	m.def("warp_reduce_sum_cuda", &warp_reduce_sum_cuda, "CUDA warp reduce sum");
 }
