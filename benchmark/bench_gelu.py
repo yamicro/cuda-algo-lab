@@ -17,5 +17,5 @@ N = 1 << 20
 x = np.random.randn(N).astype(np.float32)
 y = np.zeros_like(x)
 
-print(f"CUDA time: {gelu_cuda(x, y):.4f} ms")
-print(f"Python time: {benchmark(gelu_py, x):.4f} ms")
+print(f"CUDA time: {gelu_cuda(x, y):.8f} ms")
+print(f"Python time: {benchmark(gelu_py, x):.8f} ms")

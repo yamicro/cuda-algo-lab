@@ -23,5 +23,5 @@ weight = np.random.randn(VocabSize, D).astype(np.float32)
 output = np.zeros((N, D), dtype=np.float32)
 
 
-print(f"CUDA time: {embedding_cuda(indices, weight, output):.4f} ms")
-print(f"Python time: {benchmark(embedding_py, indices, weight):.4f} ms")
+print(f"CUDA time: {embedding_cuda(indices, weight, output):.8f} ms")
+print(f"Python time: {benchmark(embedding_py, indices, weight):.8f} ms")

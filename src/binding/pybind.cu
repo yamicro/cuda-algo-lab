@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 #include "bench_cuda/benchmark_cuda.h"
 #include "cuda/add.cu"
 #include "cuda/histgram.cu"
@@ -33,6 +34,41 @@ float add_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11:
 
     float elapsed = benchmark_kernel([&]() {
         add_kernel<<<(n+255)/256, 256>>>(d_a, d_b, d_c, n);
+    }, 3, 10);
+
+
+    cudaMemcpy(buf_c.mutable_data(0), d_c, n * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
+    return elapsed;
+}
+
+float add_fp16_pack_cuda(pybind11::array_t<float> a, pybind11::array_t<float> b, pybind11::array_t<float> c) {
+    auto buf_a = a.unchecked<1>();
+    auto buf_b = b.unchecked<1>();
+    auto buf_c = c.mutable_unchecked<1>();
+    int n = buf_a.size();
+
+    int N = buf_a.size();
+    if (N % 8 != 0) throw std::runtime_error("Input size must be divisible by 8.");
+
+    float* h_a = const_cast<float*>(buf_a.data(0));
+    half* d_a;
+
+    float* h_b = const_cast<float*>(buf_b.data(0));
+    half* d_b;
+
+    cudaMalloc(&d_a, N * sizeof(half));
+    cudaMalloc(&d_b, N * sizeof(half));
+
+    cudaMemcpy(d_a, buf_a.data(0), n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, buf_b.data(0), n * sizeof(float), cudaMemcpyHostToDevice);
+    float* d_c;
+    cudaMalloc(&d_c, N * sizeof(float));
+    cudaMemset(d_c, 0, N * sizeof(float));
+
+    float elapsed = benchmark_kernel([&]() {
+        add_fp16_pack_kernel<<<(n+255)/256, 256>>>(d_a, d_b, d_c, n);
     }, 3, 10);
 
 
@@ -267,6 +303,39 @@ float warp_reduce_sum_cuda(pybind11::array_t<float> input, pybind11::array_t<flo
     return elapsed;
 }
 
+float warp_reduce_fp16_cuda(pybind11::array_t<float> input, pybind11::array_t<float> output) {
+    auto buf_in = input.unchecked<1>();
+    auto buf_out = output.mutable_unchecked<1>();
+
+    int N = buf_in.size();
+    if (N % 8 != 0) throw std::runtime_error("Input size must be divisible by 8.");
+
+    float* h_input = const_cast<float*>(buf_in.data(0));
+    half* d_input;
+    float* d_output;
+
+    cudaMalloc(&d_input, N * sizeof(half));
+    cudaMalloc(&d_output, sizeof(float));
+    cudaMemset(d_output, 0, sizeof(float));
+
+    // convert to half
+    std::vector<half> h_half(N);
+    for (int i = 0; i < N; ++i)
+        h_half[i] = __float2half(h_input[i]);
+
+    cudaMemcpy(d_input, h_half.data(), N * sizeof(half), cudaMemcpyHostToDevice);
+
+    float elapsed = benchmark_kernel([&]() {
+    	block_all_reduce_sum_f16x8_pack_f16_kernel<<<1, 32>>>(d_input, d_output, N);
+    }, 3, 10);
+
+    cudaMemcpy(buf_out.mutable_data(0), d_output, sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+    return elapsed;
+}
+
 
 PYBIND11_MODULE(binding, m) {
     m.def("add_cuda", &add_cuda, "CUDA add two arrays");
@@ -279,4 +348,6 @@ PYBIND11_MODULE(binding, m) {
     m.def("embedding_cuda", &embedding_cuda, "CUDA embedding");
     m.def("mat_transpose_cuda", &mat_transpose_cuda, "CUDA mat_transpose transpose");
 	m.def("warp_reduce_sum_cuda", &warp_reduce_sum_cuda, "CUDA warp reduce sum");
+    m.def("warp_reduce_fp16_cuda", &warp_reduce_fp16_cuda, "warp reduce fp16");
+
 }

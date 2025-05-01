@@ -18,5 +18,5 @@ x = np.random.randn(N).astype(np.float32)
 y = np.zeros_like(x)
 alpha = 1.0
 
-print(f"CUDA time: {elu_cuda(x, y) :.4f} ms")
-print(f"Python time: {benchmark(elu_py, x, alpha):.4f} ms")
+print(f"CUDA time: {elu_cuda(x, y) :.8f} ms")
+print(f"Python time: {benchmark(elu_py, x, alpha):.8f} ms")

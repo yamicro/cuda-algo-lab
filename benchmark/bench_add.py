@@ -29,5 +29,6 @@ x = np.random.rand(N).astype(np.float32)
 y = np.random.rand(N).astype(np.float32)
 z = np.zeros(N, dtype=np.float32)
 
-print(f"CUDA time: {add_cuda(x, y, z):.4f} ms")
-print(f"Python time: {benchmark(add_py, "python", x, y):.4f} ms")
+print(f"CUDA fp32 time: {add_cuda(x, y, z):.8f} ms")
+print(f"CUDA fp16 pack time: {add_cuda(x, y, z):.8f} ms")
+print(f"Python time: {benchmark(add_py, "python", x, y):.8f} ms")
