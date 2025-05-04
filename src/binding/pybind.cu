@@ -559,6 +559,35 @@ float mat_transpose_cuda(pybind11::array_t<int> input, pybind11::array_t<float> 
     return elapsed;
 }
 
+float mat_x4_transpose_cuda(pybind11::array_t<int> input, pybind11::array_t<float> output) {
+    auto buf_input = input.unchecked<2>();
+    auto buf_output = output.mutable_unchecked<2>();
+
+    int N = buf_input.shape(0);
+    int D = buf_input.shape(1);
+
+    float* d_input;
+    float* d_output;
+    cudaMalloc(&d_input, N * D * sizeof(float));
+    cudaMalloc(&d_output, N * D * sizeof(float));
+
+    cudaMemcpy(d_input, buf_input.data(0, 0), N * D * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_output, buf_input.data(0, 0), N * D * sizeof(float), cudaMemcpyHostToDevice);
+
+    int threads = 256;
+    int blocks = (N + threads - 1) / threads;
+
+    float elapsed = benchmark_kernel([&]() {
+        mat_transpose_f32x4_shared_col2row2d_kernel<<<blocks, threads>>>(d_input, d_output, N, D);
+    }, 3, 10);
+
+    cudaMemcpy(buf_output.mutable_data(0,0), d_output, N * D * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    return elapsed;
+}
 
 float warp_reduce_sum_cuda(pybind11::array_t<float> input, pybind11::array_t<float> output) {
     auto buf_in = input.unchecked<1>();
@@ -673,6 +702,7 @@ PYBIND11_MODULE(binding, m) {
     m.def("embedding_cuda", &embedding_cuda, "CUDA embedding");
     m.def("embedding_cuda_fp16_pack", &embedding_cuda_fp16_pack, "CUDA embedding_cuda_fp16_pack");
     m.def("mat_transpose_cuda", &mat_transpose_cuda, "CUDA mat_transpose transpose");
+    m.def("mat_x4_transpose_cuda", &mat_x4_transpose_cuda,  "CUDA mat_x4 transpose transpose");
 	m.def("warp_reduce_sum_cuda", &warp_reduce_sum_cuda, "CUDA warp reduce sum");
     m.def("warp_reduce_fp16_cuda", &warp_reduce_fp16_cuda, "warp reduce fp16");
 }
