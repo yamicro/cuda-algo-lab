@@ -3,7 +3,7 @@
 #include <pybind11/numpy.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
-#include "bench_cuda/benchmark_cuda.h"
+#include "util/benchmark_cuda.h"
 #include "cuda/add.cu"
 #include "cuda/histgram.cu"
 #include "cuda/sigmod.cu"
@@ -91,26 +91,22 @@ float add_fp16_pack_cuda(pybind11::array_t<pybind11::half_t,
 
     const int N = static_cast<int>(a.size());
 
-    /* ---- 输出 NumPy 数组 ---- */
     auto out = pybind11::array_t<float>(N);
     float* h_out = out.mutable_data();
 
-    /* ---- Host 指针（只读） ---- */
     const __half* h_a = reinterpret_cast<const __half*>(a.data());
     const __half* h_b = reinterpret_cast<const __half*>(b.data());
 
-    /* ---- Device malloc ---- */
     __half* d_a;  __half* d_b;
     float * d_c;
     cudaMalloc(&d_a, N * sizeof(__half));
     cudaMalloc(&d_b, N * sizeof(__half));
     cudaMalloc(&d_c, N * sizeof(float));
 
-    /* ---- H to D ---- */
     cudaMemcpy(d_a, h_a, N * sizeof(__half), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, h_b, N * sizeof(__half), cudaMemcpyHostToDevice);
 
-    constexpr int THREADS = 128;               // <<< grid, block >>>
+    constexpr int THREADS = 128;
     constexpr int VEC = 8;
     int elems_per_block = THREADS * VEC;
     int grid = (N + elems_per_block - 1) / elems_per_block;
@@ -119,14 +115,13 @@ float add_fp16_pack_cuda(pybind11::array_t<pybind11::half_t,
         add_fp16_pack_kernel<<<grid, THREADS>>>(d_a, d_b, d_c, N);
     }, 3, 10);
 
-    /* ---- D to H ---- */
     cudaMemcpy(h_out, d_c, N * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_a);
     cudaFree(d_b);
     cudaFree(d_c);
 
-    return elapsed;                                // 返回给 Python
+    return elapsed;
 }
 
 
@@ -183,6 +178,39 @@ float sigmoid_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     return elapsed;
 }
 
+float sigmoid_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
+                                         pybind11::array::c_style |
+                                         pybind11::array::forcecast> x,
+                             pybind11::array_t<pybind11::half_t,
+                                         pybind11::array::c_style |
+                                         pybind11::array::forcecast> y,
+                             int M) {
+
+    const int N = static_cast<int>(x.size());
+
+    const __half* h_x = reinterpret_cast<const __half*>(x.data());
+    __half*       h_y = reinterpret_cast<__half*>(y.mutable_data());
+
+    __half *d_x = nullptr, *d_y = nullptr;
+    cudaMalloc(&d_x, N * sizeof(__half));
+    cudaMalloc(&d_y, N * sizeof(__half));
+
+    cudaMemcpy(d_x, h_x, N * sizeof(__half), cudaMemcpyHostToDevice);
+
+    constexpr int THREADS = 256;
+    int blocks = (N + THREADS - 1) / THREADS;
+
+    float elapsed = benchmark_kernel([&](){
+        sigmoid_f16x8_pack_kernel<<<blocks, THREADS>>>(d_x, d_y, N);
+    }, 3, 10);
+
+    cudaMemcpy(h_y, d_y, N * sizeof(__half), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+    return elapsed;
+}
+
 float relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     auto buf_x = x.unchecked<1>();
     auto buf_y = y.mutable_unchecked<1>();
@@ -197,7 +225,6 @@ float relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     int threads = 256;
     int blocks = (N + threads - 1) / threads;
 
-    // benchmark 包裹 kernel 启动
     float elapsed = benchmark_kernel([&]() {
         relu_kernel<<<blocks, threads>>>(d_x, d_y, N);
     },3, 10);
@@ -207,6 +234,38 @@ float relu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     cudaFree(d_x);
     cudaFree(d_y);
 
+    return elapsed;
+}
+
+float relu_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
+                                         pybind11::array::c_style |
+                                         pybind11::array::forcecast> x,
+                             pybind11::array_t<pybind11::half_t,
+                                         pybind11::array::c_style |
+                                         pybind11::array::forcecast> y) {
+
+    const int N = static_cast<int>(x.size());
+
+    const __half* h_x = reinterpret_cast<const __half*>(x.data());
+    __half*       h_y = reinterpret_cast<__half*>(y.mutable_data());
+
+    __half *d_x = nullptr, *d_y = nullptr;
+    cudaMalloc(&d_x, N * sizeof(__half));
+    cudaMalloc(&d_y, N * sizeof(__half));
+
+    cudaMemcpy(d_x, h_x, N * sizeof(__half), cudaMemcpyHostToDevice);
+
+    constexpr int THREADS = 256;
+    int blocks = (N + THREADS - 1) / THREADS;
+
+    float elapsed = benchmark_kernel([&](){
+        relu_f16x8_pack_kernel<<<blocks, THREADS>>>(d_x, d_y, N);
+    }, 3, 10);
+
+    cudaMemcpy(h_y, d_y, N * sizeof(__half), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
     return elapsed;
 }
 
@@ -252,8 +311,7 @@ float elu_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
 
     cudaMemcpy(d_in, h_in, N * sizeof(half), cudaMemcpyHostToDevice);
 
-    /* ---- kernel launch ---- */
-    constexpr int THREADS = 128;      // 每线程 8 half → 1024 half/blk
+    constexpr int THREADS = 128;
     constexpr int VEC = 8;
     int elems_per_block = THREADS * VEC;
     int grid = (N + elems_per_block - 1) / elems_per_block;
@@ -262,7 +320,7 @@ float elu_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
     float elapsed = benchmark_kernel([&]() {
         elu_f16x8_pack_kernel<<<grid, THREADS>>>(d_in, d_out, N);
     },3, 10);
-    cudaDeviceSynchronize();          // 等 kernel 完全结束
+    cudaDeviceSynchronize();
     auto t1 = std::chrono::high_resolution_clock::now();
 
     /* ---- D→H ---- */
@@ -300,6 +358,37 @@ float gelu_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     return elapsed;
 }
 
+float gelu_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast> x,
+                          pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast> y) {
+    const int N = static_cast<int>(x.size());
+
+    const __half* h_x = reinterpret_cast<const __half*>(x.data());
+    __half*       h_y = reinterpret_cast<__half*>(y.mutable_data());
+
+    __half *d_x = nullptr, *d_y = nullptr;
+    cudaMalloc(&d_x, N * sizeof(__half));
+    cudaMalloc(&d_y, N * sizeof(__half));
+
+    cudaMemcpy(d_x, h_x, N * sizeof(__half), cudaMemcpyHostToDevice);
+
+    constexpr int THREADS = 256;
+    int blocks = (N + THREADS - 1) / THREADS;
+
+    float elapsed = benchmark_kernel([&]() {
+        gelu_f16x8_pack_kernel<<<blocks, THREADS>>>(d_x, d_y, N);
+    }, 3, 10);
+
+    cudaMemcpy(h_y, d_y, N * sizeof(__half), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+    return elapsed;
+}
+
 float swish_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     auto buf_x = x.unchecked<1>();
     auto buf_y = y.mutable_unchecked<1>();
@@ -319,6 +408,38 @@ float swish_cuda(pybind11::array_t<float> x, pybind11::array_t<float> y) {
     },3, 10);
 
     cudaMemcpy(buf_y.mutable_data(0), d_y, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_y);
+    return elapsed;
+}
+
+float swish_cuda_fp16_pack(pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast> x,
+                          pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast> y) {
+    const int N = static_cast<int>(x.size());
+
+    const __half* h_x = reinterpret_cast<const __half*>(x.data());
+    __half*       h_y = reinterpret_cast<__half*>(y.mutable_data());
+
+    __half *d_x = nullptr, *d_y = nullptr;
+    cudaMalloc(&d_x, N * sizeof(__half));
+    cudaMalloc(&d_y, N * sizeof(__half));
+
+    cudaMemcpy(d_x, h_x, N * sizeof(__half), cudaMemcpyHostToDevice);
+
+    constexpr int THREADS = 256;
+    int blocks = (N + THREADS - 1) / THREADS;
+
+    float elapsed = benchmark_kernel([&]() {
+        swish_f16x8_pack_kernel<<<blocks, THREADS>>>(d_x, d_y, N);
+    }, 3, 10);
+
+    /* ---------- D→H ---------- */
+    cudaMemcpy(h_y, d_y, N * sizeof(__half), cudaMemcpyDeviceToHost);
 
     cudaFree(d_x);
     cudaFree(d_y);
@@ -355,6 +476,55 @@ float embedding_cuda(pybind11::array_t<int> input,pybind11::array_t<float> weigh
     cudaFree(d_indices);
     cudaFree(d_weights);
     cudaFree(d_output);
+
+    return elapsed;
+}
+
+float embedding_cuda_fp16_pack(pybind11::array_t<int,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast>      input,
+                          pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast>      weights,
+                          pybind11::array_t<pybind11::half_t,
+                                      pybind11::array::c_style |
+                                      pybind11::array::forcecast>      output) {
+    auto in  = input.unchecked<1>();
+    auto w   = weights.unchecked<2>();
+    auto out_info = output.request();
+    __half* h_out = reinterpret_cast<__half*>(out_info.ptr);
+
+    const int N = static_cast<int>(in.size());
+    const int D = static_cast<int>(w.shape(1));
+    const int V = static_cast<int>(w.shape(0));
+    if (output.size() != static_cast<size_t>(N * D))
+        throw std::runtime_error("output shape 不匹配");
+
+    int*   d_idx     = nullptr;
+    __half* d_w      = nullptr;
+    __half* d_out    = nullptr;
+    cudaMalloc(&d_idx,  N * sizeof(int));
+    cudaMalloc(&d_w,   V * D * sizeof(__half));
+    cudaMalloc(&d_out, N * D * sizeof(__half));
+
+    const int*   h_idx = in.data(0);
+    const __half* h_w  = reinterpret_cast<const __half*>(w.data(0,0));
+
+    cudaMemcpy(d_idx, h_idx, N * sizeof(int),            cudaMemcpyHostToDevice);
+    cudaMemcpy(d_w,   h_w,  V * D * sizeof(__half),      cudaMemcpyHostToDevice);
+
+    int threads = 256;
+    int blocks  = (N + threads - 1) / threads;
+
+    float elapsed = benchmark_kernel([&](){
+        embedding_f16x8_pack_kernel<<<blocks, threads>>>(d_idx, d_w, d_out, N, D);
+    }, 3, 10);
+
+    cudaMemcpy(h_out, d_out, N * D * sizeof(__half),     cudaMemcpyDeviceToHost);
+
+    cudaFree(d_idx);
+    cudaFree(d_w);
+    cudaFree(d_out);
 
     return elapsed;
 }
@@ -481,6 +651,7 @@ float warp_reduce_fp16_cuda(pybind11::array_t<pybind11::half_t,
 
     cudaFree(d_in);
     cudaFree(d_out);
+    return elapsed;
 }
 
 
@@ -490,14 +661,18 @@ PYBIND11_MODULE(binding, m) {
     m.def("add_fp16_pack_cuda", &add_fp16_pack_cuda, "CUDA add two arrays in fp16");
     m.def("histogram_cuda", &histogram_cuda, "CUDA histogram");
     m.def("sigmoid_cuda", &sigmoid_cuda, "CUDA sigmoid");
+    m.def("sigmoid_cuda_fp16_pack", &sigmoid_cuda_fp16_pack, "CUDA sigmoid fp16");
     m.def("relu_cuda", &relu_cuda, "CUDA relu");
+    m.def("relu_cuda_fp16_pack", &relu_cuda_fp16_pack, "CUDA relu fp16");
     m.def("elu_cuda", &elu_cuda, "CUDA ELU");
     m.def("elu_cuda_fp16_pack", &elu_cuda_fp16_pack, "CUDA elu_cuda_fp16_pack");
     m.def("gelu_cuda", &gelu_cuda, "CUDA GELU");
+    m.def("gelu_cuda_fp16_pack", &gelu_cuda_fp16_pack, "CUDA GELU gelu_cuda_fp16_pack");
     m.def("swish_cuda", &swish_cuda, "CUDA SWISH");
+    m.def("swish_cuda_fp16_pack", &swish_cuda_fp16_pack, "CUDA fp16 swish");
     m.def("embedding_cuda", &embedding_cuda, "CUDA embedding");
+    m.def("embedding_cuda_fp16_pack", &embedding_cuda_fp16_pack, "CUDA embedding_cuda_fp16_pack");
     m.def("mat_transpose_cuda", &mat_transpose_cuda, "CUDA mat_transpose transpose");
 	m.def("warp_reduce_sum_cuda", &warp_reduce_sum_cuda, "CUDA warp reduce sum");
     m.def("warp_reduce_fp16_cuda", &warp_reduce_fp16_cuda, "warp reduce fp16");
-
 }

@@ -8,14 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
-
+#include "util/half_exp.h"
 
 #define ALPHA 1.0f
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
-__device__ __forceinline__ __half half_exp(const __half h) {
-    return __float2half_rn(expf(__half2float(h)));
-}
+
 
 __device__ __forceinline__ float elu(float x) {
     return x > 0.f ? x : ALPHA * (expf(x) - 1.f);
