@@ -14,6 +14,7 @@
 #include "cuda/embedding.cu"
 #include "cuda/mat_transpose.cu"
 #include "cuda/warp_reduce_sum.cu"
+#include "cuda/sgemv.cu"
 
 #ifndef PYBIND11_HALF_T_DEFINED
 #define PYBIND11_HALF_T_DEFINED
@@ -683,6 +684,65 @@ float warp_reduce_fp16_cuda(pybind11::array_t<pybind11::half_t,
     return elapsed;
 }
 
+float sgemv_k32_cuda(pybind11::array_t<float> a, pybind11::array_t<float> x, pybind11::array_t<float> y) {
+    auto A = a.unchecked<2>();
+    auto X = x.unchecked<1>();
+    auto Y = y.mutable_unchecked<1>();
+
+    int M = A.shape(0);
+    int K = A.shape(1);
+
+    float *d_a, *d_x, *d_y;
+    cudaMalloc(&d_a, M * K * sizeof(float));
+    cudaMalloc(&d_x, K * sizeof(float));
+    cudaMalloc(&d_y, M * sizeof(float));
+
+    cudaMemcpy(d_a, A.data(0, 0), M * K * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_x, X.data(0), K * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 threads(32, 4);
+    dim3 blocks((M + 3) / 4);
+
+    float elapsed = benchmark_kernel([&]() {
+    	sgemv_k32_f32_kernel<<<blocks, threads>>>(d_a, d_x, d_y, M, K);
+    }, 3, 10);
+
+    cudaMemcpy(Y.mutable_data(0), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a); cudaFree(d_x); cudaFree(d_y);
+    return elapsed;
+}
+
+float sgemv_k128_cuda(pybind11::array_t<float> a, pybind11::array_t<float> x, pybind11::array_t<float> y) {
+    auto A = a.unchecked<2>();
+    auto X = x.unchecked<1>();
+    auto Y = y.mutable_unchecked<1>();
+
+    int M = A.shape(0);
+    int K = A.shape(1);
+    if (K % 128 != 0) throw std::runtime_error("K must be divisible by 128.");
+
+    float *d_a, *d_x, *d_y;
+    cudaMalloc(&d_a, M * K * sizeof(float));
+    cudaMalloc(&d_x, K * sizeof(float));
+    cudaMalloc(&d_y, M * sizeof(float));
+
+    cudaMemcpy(d_a, A.data(0, 0), M * K * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_x, X.data(0), K * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 threads(32, 4);
+    dim3 blocks((M + 3) / 4);
+
+    float elapsed = benchmark_kernel([&]() {
+		sgemv_k128_f32x4_kernel<<<blocks, threads>>>(d_a, d_x, d_y, M, K);
+    }, 3, 10);
+
+    cudaMemcpy(Y.mutable_data(0), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a); cudaFree(d_x); cudaFree(d_y);
+    return elapsed;
+}
+
 
 
 PYBIND11_MODULE(binding, m) {
@@ -705,4 +765,6 @@ PYBIND11_MODULE(binding, m) {
     m.def("mat_x4_transpose_cuda", &mat_x4_transpose_cuda,  "CUDA mat_x4 transpose transpose");
 	m.def("warp_reduce_sum_cuda", &warp_reduce_sum_cuda, "CUDA warp reduce sum");
     m.def("warp_reduce_fp16_cuda", &warp_reduce_fp16_cuda, "warp reduce fp16");
+    m.def("sgemv_k32_cuda", &sgemv_k32_cuda, "CUDA SGEMV K32");
+	m.def("sgemv_k128_cuda", &sgemv_k128_cuda, "CUDA SGEMV K128 float4");
 }
