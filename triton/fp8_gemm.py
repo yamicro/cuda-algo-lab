@@ -15,18 +15,24 @@ def act_quant_kernel(x_ptr, y_ptr, s_ptr, BLOCK_SIZE: tl.constexpr):
     tl.store(s_ptr + pid, s)
 
 
-BLOCK_SIZE = 1024
+BLOCK_SIZE = 4096
 x = torch.randn(1 << 20, dtype=torch.float16, device='cuda')
 y = torch.empty_like(x)
 s = torch.empty((x.numel() + BLOCK_SIZE - 1) // BLOCK_SIZE,
                 dtype=torch.float32, device='cuda')
 
 grid = (triton.cdiv(x.numel(), BLOCK_SIZE),)
+
+act_quant_kernel[grid](
+    x, y, s,
+    BLOCK_SIZE=BLOCK_SIZE
+)
+time.sleep(1)
 start_time = time.time()
 act_quant_kernel[grid](
     x, y, s,
     BLOCK_SIZE=BLOCK_SIZE
 )
 end_time = time.time()
-print("time usage is:", end_time - start_time)
+print("time usage is:", (end_time - start_time) * 1000 )
 print("y result is:", y[0: 5])

@@ -6,8 +6,13 @@ sys.path.append("./build")
 
 from binding import gelu_cuda, gelu_cuda_fp16_pack
 from python.gelu import gelu_py
+import os
 
+sys.path.append(os.path.abspath("build"))
+sys.path.append(os.path.abspath("."))
 def benchmark(func, *args):
+    for _ in range(2):
+        func(*args)
     time.sleep(1)
     start = time.time()
     func(*args)

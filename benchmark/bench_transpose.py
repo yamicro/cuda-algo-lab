@@ -7,6 +7,8 @@ from binding import mat_transpose_cuda, mat_x4_transpose_cuda
 from python.mat_transpose import mat_transpose_py
 
 def benchmark(func, *args):
+    for _ in range(2):
+        func(*args)
     time.sleep(1)
     start = time.time()
     func(*args)
